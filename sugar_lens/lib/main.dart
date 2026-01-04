@@ -83,7 +83,7 @@ class _SugarScannerState extends State<SugarScanner> {
         suggestions = [];
       });
 
-      var request = http.MultipartRequest('POST', Uri.parse('http://localhost:8000/upload'));
+      var request = http.MultipartRequest('POST', Uri.parse('http://10.0.0.3:8000/upload'));
 
       request.files.add(http.MultipartFile.fromBytes(
         'file',
