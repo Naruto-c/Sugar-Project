@@ -31,7 +31,6 @@ class _SugarScannerState extends State<SugarScanner> {
   TextEditingController controller = TextEditingController();
   final ImagePicker _picker = ImagePicker();
 
-  // Traffic Light System: Green (Low), Orange (Moderate), Red (High)
   Color getSugarColor(dynamic sugarValue) {
     double sugar = double.tryParse(sugarValue.toString()) ?? 0.0;
     if (sugar <= 5) return Colors.green.shade100;
@@ -39,24 +38,19 @@ class _SugarScannerState extends State<SugarScanner> {
     return Colors.red.shade100;
   }
 
-  // Visualization: 1 teaspoon/cube of sugar is roughly 4 grams
   String getCubes(dynamic sugarValue) {
     double sugar = double.tryParse(sugarValue.toString()) ?? 0.0;
     double cubes = sugar / 4.0;
     return cubes.toStringAsFixed(1);
   }
 
-  // --- FUNCTION 1: TEXT SEARCH ---
   Future<void> checkSugar(String food) async {
     if (food.isEmpty) return;
     setState(() {
       result = "Searching...";
       suggestions = [];
     });
-
-    // UPDATED: Using your PC's IP for search too
     final url = Uri.parse('http://10.0.0.3:8000/analyze/$food');
-
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -72,7 +66,6 @@ class _SugarScannerState extends State<SugarScanner> {
     }
   }
 
-  // --- FUNCTION 2: SHOW PICKER OPTIONS ---
   void _showPicker(context) {
     showModalBottomSheet(
       context: context,
@@ -103,28 +96,22 @@ class _SugarScannerState extends State<SugarScanner> {
     );
   }
 
-  // --- FUNCTION 3: IMAGE SCAN & UPLOAD ---
   Future<void> _pickAndUploadImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
-
     if (image != null) {
       setState(() {
         result = "Analyzing image...";
         suggestions = [];
       });
-
       var request = http.MultipartRequest('POST', Uri.parse('http://10.0.0.3:8000/upload'));
-
       request.files.add(http.MultipartFile.fromBytes(
         'file',
         await image.readAsBytes(),
         filename: image.name,
       ));
-
       try {
         var streamedResponse = await request.send();
         var response = await http.Response.fromStream(streamedResponse);
-
         if (response.statusCode == 200) {
           var data = jsonDecode(response.body);
           setState(() {
@@ -179,8 +166,6 @@ class _SugarScannerState extends State<SugarScanner> {
               ],
             ),
             const SizedBox(height: 30),
-            
-            // Result Text Area
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -190,10 +175,48 @@ class _SugarScannerState extends State<SugarScanner> {
               ),
               child: Text(result, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
             ),
-
             const SizedBox(height: 20),
-
             if (suggestions.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children:
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8.0, bottom: 8.0, top: 16.0),
+                    child: Text(
+                      "AI IDENTIFIED POSSIBILITIES:",
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                    ),
+                  ),
+                  ...suggestions.map((sug) {
+                    return Card(
+                      elevation: 3,
+                      color: getSugarColor(sug['sugar']),
+                      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.white,
+                          child: Icon(Icons.auto_awesome, size: 20, color: Colors.blue),
+                        ),
+                        title: Text(
+                          sug['label'].toString().toUpperCase(),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text("Sugar Content: ${sug['sugar']}g"),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          setState(() {
+                            result = "Item: ${sug['label']}\nSugar: ${sug['sugar']}g\n(~${getCubes(sug['sugar'])} cubes)";
+                            suggestions = [];
+                          });
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
