@@ -7,6 +7,7 @@ from google.genai import types
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import os
+import json
 from dotenv import load_dotenv
 
 # --- 1. SESSION & GENAI SDK SETUP ---
@@ -15,7 +16,7 @@ retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504]
 session.mount('https://', HTTPAdapter(max_retries=retries))
 
 HEADERS = {'User-Agent': 'SugarLens - Windows - Version 1.0 - reape_dev'}
-load_dotenv() # This loads the variables from .env
+load_dotenv() 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=API_KEY)
@@ -30,46 +31,73 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 2. REUSABLE SEARCH LOGIC ---
-def fetch_sugar_logic(food_name: str):
-    """Hits the Open Food Facts API and returns product name and sugar content."""
+# --- 2. DATABASE SEARCH LOGIC (Open Food Facts) ---
+def fetch_from_db(food_name: str):
+    """Hits the Open Food Facts API and returns raw product data."""
     search_url = "https://world.openfoodfacts.org/cgi/search.pl"
     params = {
         "search_terms": food_name,
         "search_simple": 1,
         "action": "process",
         "json": 1,
-        "page_size": 5
+        "page_size": 3 # Look at top 3 to find a better match
     }
 
     try:
         response = session.get(search_url, params=params, headers=HEADERS, timeout=10)
         response.raise_for_status()
         data = response.json()
-
-        if data.get('products'):
-            for product in data['products']:
-                nutriments = product.get('nutriments', {})
-                sugar = nutriments.get('sugars_100g')
-                if sugar is not None:
-                    return {
-                        "product_name": product.get('product_name', food_name),
-                        "sugar_100g": sugar
-                    }
-
-        return {"product_name": food_name, "sugar_100g": "No Data"}
-    except Exception as e:
-        return {"product_name": food_name, "sugar_100g": "N/A"}
+        return data.get('products', [])
+    except Exception:
+        return []
 
 # --- 3. API ROUTES ---
 
 @app.get("/analyze/{food_name}")
 def analyze_text(food_name: str):
-    return fetch_sugar_logic(food_name)
+    """Hybrid Strategy: Database first, Gemini as Referee."""
+    products = fetch_from_db(food_name)
+    
+    db_name = "No Data"
+    db_sugar = "N/A"
+    
+    if products:
+        # Check the first product
+        top_hit = products[0]
+        db_name = top_hit.get('product_name', food_name)
+        db_sugar = top_hit.get('nutriments', {}).get('sugars_100g')
+
+        # --- TRUST CHECK ---
+        # If the search term is clearly in the product name, return DB data immediately (Saves Quota)
+        if food_name.lower() in db_name.lower() and db_sugar is not None:
+            return {"product_name": db_name, "sugar_100g": db_sugar, "source": "database"}
+
+    # --- GEMINI REFEREE STEP ---
+    # If we are here, the database was empty OR returned something suspicious (like Cappy for Coke)
+    prompt = (
+        f"A user searched for '{food_name}'. The database returned '{db_name}' with {db_sugar}g sugar. "
+        "If this database result is inaccurate for a standard version of the search term, provide the "
+        "average sugar content for the correct item per 100g. "
+        "Return ONLY a JSON object: {\"product_name\": \"name\", \"sugar_100g\": value}"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        # Parse the AI response
+        ai_text = response.text.replace('```json', '').replace('```', '').strip()
+        ai_data = json.loads(ai_text)
+        ai_data["source"] = "gemini_ai"
+        return ai_data
+    except Exception as e:
+        # If AI fails, return whatever the database had
+        return {"product_name": db_name, "sugar_100g": db_sugar if db_sugar else 0.0, "source": "fallback"}
 
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
-    """Modernized 2025 image upload logic using the google-genai SDK."""
+    """AI image analysis remains high-priority Gemini usage."""
     try:
         contents = await file.read()
         prompt = (
@@ -78,8 +106,6 @@ async def upload_image(file: UploadFile = File(...)):
             "separated by commas only. No extra text."
         )
 
-        # The new SDK takes a list of content parts
-        # We use types.Part.from_bytes to handle the image correctly
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -90,14 +116,14 @@ async def upload_image(file: UploadFile = File(...)):
 
         if not response.text:
             return {"suggestions": [], "error": "AI could not identify the image."}
-        # Split the CSV string from the AI
+        
         food_names = [name.strip() for name in response.text.split(',')]
         suggestions = []
         for name in food_names[:3]:
-            # Fetch real-world sugar data for the AI's guesses
-            data = fetch_sugar_logic(name)
+            # We use the text analysis logic for the AI's guesses too
+            data = analyze_text(name)
             suggestions.append({
-                "label": name,
+                "label": data['product_name'],
                 "confidence": "AI",
                 "sugar": data['sugar_100g']
             })
@@ -108,5 +134,5 @@ async def upload_image(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    # Make sure to run on 0.0.0.0 so your Flutter app can see it
     uvicorn.run(app, host="0.0.0.0", port=8000)
+    
