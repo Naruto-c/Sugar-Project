@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>SugarLens needs camera access to identify food items for sugar analysis.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SugarLens needs access to your gallery to analyze saved food photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app does not require microphone access.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

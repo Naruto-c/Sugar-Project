@@ -6,6 +6,8 @@ from google import genai
 from google.genai import types
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import os
+from dotenv import load_dotenv
 
 # --- 1. SESSION & GENAI SDK SETUP ---
 session = requests.Session()
@@ -13,10 +15,10 @@ retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504]
 session.mount('https://', HTTPAdapter(max_retries=retries))
 
 HEADERS = {'User-Agent': 'SugarLens - Windows - Version 1.0 - reape_dev'}
+load_dotenv() # This loads the variables from .env
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-# The new 2025 SDK uses a Client object
-# Replace with your actual key
-client = genai.Client(api_key="AIzaSyC-BxemV1nQQTw1ylqwdwEhfQDbtiaeqDo")
+client = genai.Client(api_key=API_KEY)
 
 app = FastAPI()
 
